@@ -1,47 +1,62 @@
-name: CI Pipeline
+name: CI-CD Pipeline (External Repo - Petclinic)
 
 on:
-  push:
-    branches: [ "main" ]
+push:
+branches:
+- main
+workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+build-test-deploy:
+runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+```
+env:
+  SONAR_HOST_URL: http://<SONAR_IP>:9000
+  NEXUS_URL: http://<NEXUS_IP>:8081
+  TOMCAT_URL: http://<TOMCAT_IP>:8080
 
-      - name: Set up Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+steps:
+  # 1. Checkout this pipeline repo (optional but recommended)
+  - name: Checkout Pipeline Repo
+    uses: actions/checkout@v4
 
-      - name: Configure Maven settings (for Nexus)
-        run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml <<EOF
-          <settings>
-            <servers>
-              <server>
-                <id>nexus</id>
-                <username>${NEXUS_USERNAME}</username>
-                <password>${NEXUS_PASSWORD}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
-        env:
-          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
-          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+  # 3. Set up Java
+  - name: Set up JDK 17
+    uses: actions/setup-java@v4
+    with:
+      java-version: '17'
+      distribution: 'temurin'
 
-      - name: Build + SonarQube Scan
-        run: |
-          mvn clean verify sonar:sonar \
-          -Dsonar.projectKey=my-app \
-          -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
-          -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+  # 4. Build + Test
+  - name: Build with Maven
+    run: |
+      cd Petclinic
+      mvn clean install
 
-      - name: Upload to Nexus
-        run: mvn deploy -DskipTests
+  # 5. SonarQube Scan
+  - name: SonarQube Analysis
+    run: |
+      cd Petclinic
+      mvn sonar:sonar \
+      -Dsonar.projectKey=petclinic \
+      -Dsonar.host.url=${SONAR_HOST_URL} \
+      -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+
+  # 6. Upload Artifact to Nexus
+  - name: Deploy to Nexus
+    run: |
+      cd Petclinic
+      mvn deploy -DskipTests \
+      -Dnexus.username=${{ secrets.NEXUS_USERNAME }} \
+      -Dnexus.password=${{ secrets.NEXUS_PASSWORD }}
+
+  # 7. Deploy to Tomcat
+  - name: Deploy WAR to Tomcat
+    run: |
+      cd Petclinic
+      curl -u ${{ secrets.TOMCAT_USER }}:${{ secrets.TOMCAT_PASSWORD }} \
+      --upload-file target/*.war \
+      "${TOMCAT_URL}/manager/text/deploy?path=/petclinic&update=true"
+```
+
