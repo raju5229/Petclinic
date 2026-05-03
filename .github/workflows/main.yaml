@@ -1,4 +1,4 @@
-name: CI-CD Pipeline (External Repo - Petclinic)
+name: CI-CD Pipeline (Petclinic)
 
 on:
 push:
@@ -17,18 +17,29 @@ env:
   TOMCAT_URL: http://<TOMCAT_IP>:8080
 
 steps:
-  # 1. Checkout pipeline repo
-  - name: Checkout Pipeline Repo
+  # 1. Checkout code
+  - name: Checkout Code
     uses: actions/checkout@v4
-    
-  # 3. Set up Java
+
+  # 2. Set up Java
   - name: Set up JDK 17
     uses: actions/setup-java@v4
     with:
       java-version: '17'
       distribution: 'temurin'
 
-  # 4. Configure Maven settings (for Nexus auth)
+  # 3. Inject Nexus repo into pom.xml
+  - name: Add Nexus to pom.xml
+    run: |
+      sed -i '/<\/project>/i \
+      <distributionManagement>\n\
+        <repository>\n\
+          <id>nexus</id>\n\
+          <url>'"$NEXUS_URL"'/repository/maven-releases/</url>\n\
+        </repository>\n\
+      </distributionManagement>' pom.xml
+
+  # 4. Configure Maven settings (credentials)
   - name: Configure Maven settings
     run: |
       mkdir -p ~/.m2
@@ -44,40 +55,24 @@ steps:
       </settings>
       EOF
 
-  # 5. Inject Nexus repo into pom.xml
-  - name: Add Nexus to pom.xml
-    run: |
-      cd Petclinic
-      sed -i '/<\/project>/i \
-      <distributionManagement>\n\
-        <repository>\n\
-          <id>nexus</id>\n\
-          <url>'"$NEXUS_URL"'/repository/maven-releases/</url>\n\
-        </repository>\n\
-      </distributionManagement>' pom.xml
-
-  # 6. Build + Test
+  # 5. Build + Test
   - name: Build with Maven
-    working-directory: Petclinic
     run: mvn clean install
 
-  # 7. SonarQube Scan
+  # 6. SonarQube Scan
   - name: SonarQube Analysis
-    working-directory: Petclinic
     run: |
       mvn sonar:sonar \
       -Dsonar.projectKey=petclinic \
       -Dsonar.host.url=${SONAR_HOST_URL} \
       -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
-  # 8. Upload Artifact to Nexus
+  # 7. Upload Artifact to Nexus
   - name: Deploy to Nexus
-    working-directory: Petclinic
     run: mvn deploy -DskipTests
 
-  # 9. Deploy to Tomcat
+  # 8. Deploy to Tomcat
   - name: Deploy WAR to Tomcat
-    working-directory: Petclinic
     run: |
       curl -u ${{ secrets.TOMCAT_USER }}:${{ secrets.TOMCAT_PASSWORD }} \
       --upload-file target/*.war \
