@@ -56,7 +56,10 @@ jobs:
           -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
       - name: Deploy to Nexus
-        run: mvn deploy -DskipTests
+        run: |  
+          mvn deploy -DskipTests \
+          -DaltDeploymentRepository=nexus::default::http://13.235.245.255:8081/repository/maven-releases/
+        
 
       - name: Deploy WAR to Tomcat
         run: |
